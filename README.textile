@@ -7,32 +7,10 @@ h2. Installation
 For Bundler put the following in your Gemfile:
 
 <pre>
+  gem 'tolk' # as requirement
   gem 'i18n-active_record',
-      :git => 'git://github.com/svenfuchs/i18n-active_record.git',
+      :git => 'git://github.com/chytreg/i18n-active_record.git',
       :require => 'i18n/active_record'
-</pre>
-
-Next create a active record model named @Translation@ with the Rails Generator.
-Your migration should look like this:
-
-<pre>
-  class CreateTranslations < ActiveRecord::Migration
-    def self.up
-      create_table :translations do |t|
-        t.string :locale
-        t.string :key
-        t.text   :value
-        t.text   :interpolations
-        t.boolean :is_proc, :default => false
-
-        t.timestamps
-      end
-    end
-
-    def self.down
-      drop_table :translations
-    end
-  end
 </pre>
 
 With this translation model you will be able to manage your translation, and add new translations or languages through
@@ -40,26 +18,14 @@ it.
 
 To load @I18n::Backend::ActiveRecord@ into your Rails application, create a new file in *config/initializers* named *locale.rb*.
 
-A simple configuration for your locale.rb could look like this:
+A configuration with cache support for your locale.rb could look like this:
 
 <pre>
-  require 'i18n/backend/active_record'
-  I18n.backend = I18n::Backend::ActiveRecord.new
+  I18n::Backend::ActiveRecord.send(:include, I18n::Backend::Cache)
+  I18n.cache_store = ActiveSupport::Cache.lookup_store(:dalli_store, { :namespace => "project-i18n-#{Rails.env}", :expires_in => 1.month, :compress => true })
+  I18n.backend = I18n::Backend::Chain.new(I18n::Backend::ActiveRecord.new, I18n.backend)
 </pre>
 
-A more adavanced example (Thanks Moritz), which uses YAML files and ActiveRecord for lookups:
-
-<pre>
-  require 'i18n/backend/active_record'
-  I18n.backend = I18n::Backend::ActiveRecord.new
-
-  I18n::Backend::ActiveRecord.send(:include, I18n::Backend::Memoize)
-  I18n::Backend::ActiveRecord.send(:include, I18n::Backend::Flatten)
-  I18n::Backend::Simple.send(:include, I18n::Backend::Memoize)
-  I18n::Backend::Simple.send(:include, I18n::Backend::Pluralization)
-
-  I18n.backend = I18n::Backend::Chain.new(I18n::Backend::Simple.new, I18n.backend)
-</pre>
 
 h2. Usage
 

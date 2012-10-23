@@ -1,29 +1,35 @@
 require 'i18n/backend/base'
-require 'i18n/backend/active_record/translation'
+
+Tolk::Translation.instance_eval do
+  def lookup(locale, keys)
+    keys = Array(keys).map! { |key| key.to_s }
+    namespace = "#{keys.last}#{I18n::Backend::Flatten::FLATTEN_SEPARATOR}%"
+    self.includes(:phrase, :locale).where(["tolk_locales.name = ? AND (tolk_phrases.key IN (?) OR tolk_phrases.key LIKE ?)", locale, keys, namespace])
+  end
+end
 
 module I18n
   module Backend
     class ActiveRecord
       autoload :Missing,     'i18n/backend/active_record/missing'
-      autoload :StoreProcs,  'i18n/backend/active_record/store_procs'
-      autoload :Translation, 'i18n/backend/active_record/translation'
 
       module Implementation
         include Base, Flatten
 
         def available_locales
           begin
-            Translation.available_locales
+            Tolk::Locale.pluck(:name).uniq.map(&:to_sym)
           rescue ::ActiveRecord::StatementInvalid
             []
           end
         end
 
         def store_translations(locale, data, options = {})
+          return "Sorry, but unsupported"
           escape = options.fetch(:escape, true)
           flatten_translations(locale, data, escape, false).each do |key, value|
-            Translation.locale(locale).lookup(expand_keys(key)).delete_all
-            Translation.create(:locale => locale.to_s, :key => key.to_s, :value => value)
+            # Translation.locale(locale).lookup(expand_keys(key)).delete_all
+            # Translation.create(:locale => locale.to_s, :key => key.to_s, :value => value)
           end
         end
 
@@ -31,20 +37,19 @@ module I18n
 
         def lookup(locale, key, scope = [], options = {})
           key = normalize_flat_keys(locale, key, scope, options[:separator])
-          result = Translation.locale(locale).lookup(key).all
+          results = Tolk::Translation.lookup(locale, key).all
+          return nil if results.empty?
 
-          if result.empty?
-            nil
-          elsif result.first.key == key
-            result.first.value
+          translation = if results.first.phrase.key == key
+            results.first.text
           else
             chop_range = (key.size + FLATTEN_SEPARATOR.size)..-1
-            result = result.inject({}) do |hash, r|
-              hash[r.key.slice(chop_range)] = r.value
+            results.inject({}) do |hash, r|
+              hash[r.phrase.key.slice(chop_range)] = r.text
               hash
             end
-            result.deep_symbolize_keys
           end
+          translation.respond_to?(:deep_symbolize_keys) ? translation.deep_symbolize_keys : translation
         end
 
         # For a key :'foo.bar.baz' return ['foo', 'foo.bar', 'foo.bar.baz']
